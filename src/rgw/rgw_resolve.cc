@@ -18,11 +18,7 @@
 #define dout_subsys ceph_subsys_rgw
 
 class RGWDNSResolver {
-  list<res_state> states;
   Mutex lock;
-
-  int get_state(res_state *ps);
-  void put_state(res_state s);
 
 
 public:
@@ -33,53 +29,12 @@ public:
 
 RGWDNSResolver::~RGWDNSResolver()
 {
-  list<res_state>::iterator iter;
-  for (iter = states.begin(); iter != states.end(); ++iter) {
-    struct __res_state *s = *iter;
-    delete s;
-  }
-}
-
-
-int RGWDNSResolver::get_state(res_state *ps)
-{
-  lock.Lock();
-  if (!states.empty()) {
-    res_state s = states.front();
-    states.pop_front();
-    lock.Unlock();
-    *ps = s;
-    return 0;
-  }
-  lock.Unlock();
-  struct __res_state *s = new struct __res_state;
-  s->options = 0;
-  if (res_ninit(s) < 0) {
-    delete s;
-    dout(0) << "ERROR: failed to call res_ninit()" << dendl;
-    return -EINVAL;
-  }
-  *ps = s;
-  return 0;
-}
-
-void RGWDNSResolver::put_state(res_state s)
-{
-  Mutex::Locker l(lock);
-  states.push_back(s);
 }
 
 
 int RGWDNSResolver::resolve_cname(const string& hostname, string& cname, bool *found)
 {
-  res_state res;
-
   *found = false;
-
-  int r = get_state(&res);
-  if (r < 0) {
-    return r;
-  }
 
   int ret;
 
@@ -91,7 +46,7 @@ int RGWDNSResolver::resolve_cname(const string& hostname, string& cname, bool *f
   const char *origname = hostname.c_str();
   unsigned char *pt, *answer;
   unsigned char *answend;
-  int len = res_nquery(res, origname, C_IN, T_CNAME, buf, sizeof(buf));
+  int len = res_query(origname, C_IN, T_CNAME, buf, sizeof(buf));
   if (len < 0) {
     dout(20) << "res_query() failed" << dendl;
     ret = 0;
@@ -157,7 +112,6 @@ int RGWDNSResolver::resolve_cname(const string& hostname, string& cname, bool *f
   *found = true;
   ret = 0;
 done:
-  put_state(res);
   return ret;
 }
 
